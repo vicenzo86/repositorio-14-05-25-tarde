@@ -1,4 +1,3 @@
-
 import { useEffect, useRef, useState } from 'react';
 import { Construction } from '@/types/construction';
 import { toast } from '@/components/ui/use-toast';
@@ -84,7 +83,6 @@ export const useMapbox = ({
       return;
     }
 
-    // Cleanup previous map
     if (map.current) {
       map.current.remove();
       map.current = null;
@@ -98,8 +96,9 @@ export const useMapbox = ({
       }
       
       window.mapboxgl.accessToken = mapboxToken;
+      // Desabilitar Web Workers para teste no Vercel
+      window.mapboxgl.workerCount = 0;
       
-      // Try with a simpler style first if it's a retry
       const mapStyle = renderAttempts > 0 
         ? 'mapbox://styles/mapbox/light-v11' 
         : 'mapbox://styles/mapbox/streets-v12';
@@ -111,15 +110,15 @@ export const useMapbox = ({
         zoom: zoom,
         attributionControl: true,
         preserveDrawingBuffer: true,
-        antialias: false, // Disable for better performance on mobile
-        fadeDuration: 0,   // Disable fade animations for better performance
+        antialias: false, 
+        fadeDuration: 0,   
         maxZoom: 19,
         minZoom: 3,
-        pitch: 0, // Keep flat for better performance
-        renderWorldCopies: true
+        pitch: 0, 
+        renderWorldCopies: true,
+        maxParallelImageRequests: 4 // Ajustado para um valor um pouco maior, mas ainda conservador
       });
 
-      // Add minimal controls
       newMap.addControl(new window.mapboxgl.NavigationControl({ showCompass: false }), 'top-right');
       
       newMap.on('load', () => {
@@ -135,7 +134,6 @@ export const useMapbox = ({
       newMap.on('error', (e: any) => {
         console.error('Mapbox error:', e);
         
-        // Try again with a different configuration if we haven't reached max attempts
         if (renderAttempts < maxRenderAttempts - 1) {
           console.log(`Retry attempt ${renderAttempts + 1} of ${maxRenderAttempts}`);
           setRenderAttempts(prev => prev + 1);
@@ -157,7 +155,6 @@ export const useMapbox = ({
       setMapError("Erro ao inicializar o mapa. Usando visualização alternativa.");
       setMapboxSupported(false);
       
-      // Log detailed error information
       if (error instanceof Error) {
         console.error("Mapbox initialization error details:", {
           message: error.message,
@@ -176,15 +173,12 @@ export const useMapbox = ({
     };
   }, [mapboxToken, center, zoom, checkedSupport, mapboxSupported, renderAttempts]);
 
-  // Add markers to map
   useEffect(() => {
     if (!map.current || !mapLoaded || !mapboxToken || !mapboxSupported || !window.mapboxgl) return;
     
-    // Remove existing markers
     markers.current.forEach(marker => marker.remove());
     markers.current = [];
     
-    // Add new markers
     constructions.forEach(construction => {
       try {
         if (!construction.latitude || !construction.longitude) return;
