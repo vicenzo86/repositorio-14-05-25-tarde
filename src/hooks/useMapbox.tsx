@@ -1,14 +1,12 @@
 import { useEffect, useRef, useState } from "react";
+import mapboxgl from "mapbox-gl"; // Importar diretamente do pacote npm
+import "mapbox-gl/dist/mapbox-gl.css"; // Importar o CSS do Mapbox
 import { Construction } from "@/types/construction";
 import { toast } from "@/components/ui/use-toast";
 import { createMapMarker } from "@/components/MapMarker";
 import { checkWebGLSupport, isMobileDevice } from "@/utils/webGLDetection";
 
-declare global {
-  interface Window {
-    mapboxgl: any;
-  }
-}
+// Removido: declare global ... window.mapboxgl, pois agora importamos diretamente
 
 const DEFAULT_MAPBOX_TOKEN = "pk.eyJ1IjoidmljZW56bzE5ODYiLCJhIjoiY21hOTJ1dDk3MW43ajJwcHdtancwbG9zbSJ9.TTMx21fG8mpx04i1h2hl-Q";
 
@@ -26,73 +24,46 @@ export const useMapbox = ({
   zoom = 9,
 }: UseMapboxProps) => {
   const mapContainer = useRef<HTMLDivElement>(null);
-  const map = useRef<any | null>(null);
-  const markers = useRef<any[]>([]);
+  const map = useRef<mapboxgl.Map | null>(null); // Usar o tipo Map do mapboxgl
+  const markers = useRef<mapboxgl.Marker[]>([]); // Usar o tipo Marker do mapboxgl
   const [mapboxToken] = useState<string>(DEFAULT_MAPBOX_TOKEN);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
-  const [mapboxSupported, setMapboxSupported] = useState(true); // Assume supported initially
-  const [mapboxScriptLoaded, setMapboxScriptLoaded] = useState(false);
+  const [mapboxSupported, setMapboxSupported] = useState(true);
   const [checkedSupport, setCheckedSupport] = useState(false);
   const [renderAttempts, setRenderAttempts] = useState(0);
   const maxRenderAttempts = 2;
 
-  // Effect to check for Mapbox GL script and WebGL support
+  // Effect to check WebGL support (Mapbox GL JS object is now available via import)
   useEffect(() => {
-    let scriptCheckInterval: NodeJS.Timeout;
-
-    const verifyMapboxScript = () => {
-      if (typeof window !== "undefined" && window.mapboxgl) {
-        console.log("Mapbox GL script loaded.");
-        setMapboxScriptLoaded(true);
-        if (scriptCheckInterval) clearInterval(scriptCheckInterval);
-
-        // Now check WebGL support
-        try {
-          const isMobile = isMobileDevice();
-          console.log("Device check:", { isMobile });
-          const supportsWebGL = checkWebGLSupport();
-          if (!supportsWebGL) {
-            console.log("WebGL not supported, using fallback view");
-            setMapboxSupported(false);
-            setMapError(
-              isMobile
-                ? "Seu dispositivo móvel não suporta mapas 3D. Usando visualização em lista."
-                : "Seu navegador não suporta WebGL, necessário para exibir o mapa."
-            );
-          } else {
-            setMapboxSupported(true); // Explicitly set to true if WebGL is supported
-          }
-        } catch (error) {
-          console.error("Erro ao verificar suporte WebGL:", error);
-          setMapboxSupported(false);
-          setMapError("Erro ao verificar compatibilidade do navegador.");
-        }
-        setCheckedSupport(true);
-
+    try {
+      const isMobile = isMobileDevice();
+      console.log("Device check:", { isMobile });
+      const supportsWebGL = checkWebGLSupport();
+      if (!supportsWebGL) {
+        console.log("WebGL not supported, using fallback view");
+        setMapboxSupported(false);
+        setMapError(
+          isMobile
+            ? "Seu dispositivo móvel não suporta mapas 3D. Usando visualização em lista."
+            : "Seu navegador não suporta WebGL, necessário para exibir o mapa."
+        );
       } else {
-        console.log("Mapbox GL script not yet loaded, checking again...");
+        setMapboxSupported(true);
       }
-    };
-
-    // Initial check
-    verifyMapboxScript();
-
-    // Fallback interval check if not immediately available
-    if (typeof window !== "undefined" && !window.mapboxgl) {
-      scriptCheckInterval = setInterval(verifyMapboxScript, 500);
+    } catch (error) {
+      console.error("Erro ao verificar suporte WebGL:", error);
+      setMapboxSupported(false);
+      setMapError("Erro ao verificar compatibilidade do navegador.");
     }
-
-    return () => {
-      if (scriptCheckInterval) clearInterval(scriptCheckInterval);
-    };
+    setCheckedSupport(true);
   }, []);
 
   // Initialize map
   useEffect(() => {
-    if (!mapboxScriptLoaded || !mapContainer.current || !mapboxToken || !checkedSupport || !mapboxSupported || renderAttempts >= maxRenderAttempts) {
+    // A verificação de mapboxScriptLoaded não é mais necessária da mesma forma, pois o import garante a disponibilidade
+    if (!mapContainer.current || !mapboxToken || !checkedSupport || !mapboxSupported || renderAttempts >= maxRenderAttempts) {
       console.log("Map initialization skipped:", {
-        mapboxScriptLoaded,
         hasContainer: !!mapContainer.current,
         hasToken: !!mapboxToken,
         checkedSupport,
@@ -100,7 +71,7 @@ export const useMapbox = ({
         renderAttempts,
       });
       if (checkedSupport && !mapboxSupported && !mapError) {
-        setMapError("Mapbox não é suportado neste navegador ou dispositivo.")
+        setMapError("Mapbox não é suportado neste navegador ou dispositivo.");
       }
       return;
     }
@@ -112,21 +83,20 @@ export const useMapbox = ({
 
     try {
       console.log("Initializing Mapbox with token:", mapboxToken);
-      window.mapboxgl.accessToken = mapboxToken;
-      // window.mapboxgl.workerCount = 0; // REMOVED: This line was suspected of causing the 'send' error
+      mapboxgl.accessToken = mapboxToken; // Usar o mapboxgl importado
 
       const mapStyle =
         renderAttempts > 0
           ? "mapbox://styles/mapbox/light-v11"
           : "mapbox://styles/mapbox/streets-v12";
 
-      const newMap = new window.mapboxgl.Map({
+      const newMap = new mapboxgl.Map({
         container: mapContainer.current,
         style: mapStyle,
-        center: center,
+        center: center as [number, number],
         zoom: zoom,
         attributionControl: true,
-        preserveDrawingBuffer: true, 
+        preserveDrawingBuffer: true,
         antialias: false,
         fadeDuration: 0,
         maxZoom: 19,
@@ -137,7 +107,7 @@ export const useMapbox = ({
       });
 
       newMap.addControl(
-        new window.mapboxgl.NavigationControl({ showCompass: false }),
+        new mapboxgl.NavigationControl({ showCompass: false }),
         "top-right"
       );
 
@@ -189,11 +159,12 @@ export const useMapbox = ({
         map.current = null;
       }
     };
-  }, [mapboxScriptLoaded, mapboxToken, center, zoom, checkedSupport, mapboxSupported, renderAttempts]);
+  // A dependência mapboxScriptLoaded foi removida, pois o import já lida com isso.
+  }, [mapboxToken, center, zoom, checkedSupport, mapboxSupported, renderAttempts]); 
 
   // Add markers to map
   useEffect(() => {
-    if (!map.current || !mapLoaded || !mapboxToken || !mapboxSupported || !mapboxScriptLoaded) return;
+    if (!map.current || !mapLoaded || !mapboxToken || !mapboxSupported) return;
 
     markers.current.forEach((marker) => marker.remove());
     markers.current = [];
@@ -205,14 +176,15 @@ export const useMapbox = ({
           map: map.current!,
           construction,
           onMarkerClick,
-          mapboxgl: window.mapboxgl,
+          mapboxgl: mapboxgl, // Passar o mapboxgl importado
         });
         markers.current.push(marker);
       } catch (error) {
         console.error("Error adding marker:", error);
       }
     });
-  }, [constructions, mapboxToken, onMarkerClick, mapLoaded, mapboxSupported, mapboxScriptLoaded]);
+  // A dependência mapboxScriptLoaded foi removida.
+  }, [constructions, mapboxToken, onMarkerClick, mapLoaded, mapboxSupported]); 
 
   return {
     mapContainer,
