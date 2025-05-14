@@ -1,101 +1,65 @@
 
-/**
- * Utility functions for WebGL detection and support
- */
+// Cache para os resultados de detecção
+let webglSupportChecked = false;
+let webglSupported = false;
+let mobileDeviceChecked = false;
+let isMobile = false;
 
-/**
- * Checks if the browser supports WebGL
- * @returns {boolean} Whether WebGL is supported
- */
+// Verificar suporte a WebGL
 export const checkWebGLSupport = (): boolean => {
-  try {
-    // Mobile browser check
-    const userAgent = navigator.userAgent || navigator.vendor || (window as any).opera;
-    const isMobile = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(userAgent.toLowerCase());
-    
-    console.log("Device detection:", { isMobile, userAgent });
-    
-    // Para dispositivos móveis, vamos tentar ser mais permissivos
-    if (isMobile) {
-      // Em dispositivos móveis, vamos checar primeiro se o navegador é recente o suficiente
-      // A maioria dos navegadores móveis modernos suporta WebGL
-      const isRecentMobileBrowser = /Chrome\/([0-9]+)/.test(userAgent) || 
-                                   /Firefox\/([0-9]+)/.test(userAgent) || 
-                                   /Safari\/([0-9]+)/.test(userAgent);
-      
-      if (isRecentMobileBrowser) {
-        console.log("Navegador móvel moderno detectado, assumindo suporte a WebGL");
-        return true;
-      }
-    }
-    
-    const canvas = document.createElement('canvas');
-    let gl = null;
-    
-    try {
-      // Try to get WebGL context
-      gl = canvas.getContext('webgl') || 
-          canvas.getContext('experimental-webgl') || 
-          canvas.getContext('webgl2');
-    } catch (e) {
-      console.error("Error getting WebGL context:", e);
-      return false;
-    }
-    
-    // Check if the context is valid and is a WebGLRenderingContext
-    const supportsWebGL = !!(gl && gl instanceof WebGLRenderingContext);
-    
-    // Additional check for mobile devices - sometimes they report WebGL support but can't actually use it
-    if (supportsWebGL && isMobile) {
-      // Try to execute a simple WebGL operation
-      try {
-        gl.clearColor(0.0, 0.0, 0.0, 1.0);
-        gl.clear(gl.COLOR_BUFFER_BIT);
-      } catch (e) {
-        console.error("Error executing WebGL commands on mobile:", e);
-        return false;
-      }
-    }
-    
-    console.log("WebGL support check:", {
-      hasWebGLRenderingContext: !!window.WebGLRenderingContext,
-      context: gl,
-      contextValid: !!gl,
-      isCorrectInstance: !!(gl && gl instanceof WebGLRenderingContext),
-      supported: supportsWebGL
-    });
-    
-    return supportsWebGL;
-  } catch (e) {
-    console.error("Error checking WebGL support:", e);
+  // Retornar resultado em cache se já verificado
+  if (webglSupportChecked) {
+    return webglSupported;
+  }
+
+  // Evitar execução em ambiente SSR
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
     return false;
   }
+
+  try {
+    const canvas = document.createElement('canvas');
+    const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+    webglSupported = !!gl;
+  } catch (e) {
+    console.error('Erro ao verificar suporte a WebGL:', e);
+    webglSupported = false;
+  }
+
+  webglSupportChecked = true;
+  return webglSupported;
 };
 
-/**
- * Checks if the device is a mobile device
- * @returns {boolean} Whether the device is mobile
- */
+// Verificar se é dispositivo móvel
 export const isMobileDevice = (): boolean => {
-  const userAgent = navigator.userAgent || navigator.vendor || (window as any).opera;
-  
-  // Detecta tablets também como dispositivos móveis
-  const isMobile = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini|mobile|tablet/i.test(userAgent.toLowerCase());
-  
-  // Também verifica por características de touchscreen
-  const hasTouch = 'ontouchstart' in window || 
-                  navigator.maxTouchPoints > 0 || 
-                  (navigator as any).msMaxTouchPoints > 0;
-                  
-  const isMobileViewport = window.innerWidth < 768;
-  
-  console.log("Mobile detection:", { 
-    isMobile, 
-    hasTouch, 
-    isMobileViewport, 
-    viewportWidth: window.innerWidth,
-    userAgent
-  });
-  
-  return isMobile || (hasTouch && isMobileViewport);
+  // Retornar resultado em cache se já verificado
+  if (mobileDeviceChecked) {
+    return isMobile;
+  }
+
+  // Evitar execução em ambiente SSR
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') {
+    return false;
+  }
+
+  try {
+    const userAgent = navigator.userAgent || navigator.vendor || (window as any).opera;
+    isMobile = (
+      /android/i.test(userAgent) ||
+      /iPad|iPhone|iPod/.test(userAgent) ||
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) // iPad Pro
+    );
+  } catch (e) {
+    console.error('Erro ao verificar dispositivo móvel:', e);
+    isMobile = false;
+  }
+
+  mobileDeviceChecked = true;
+  return isMobile;
+};
+
+// Resetar cache (para testes)
+export const resetDetectionCache = (): void => {
+  webglSupportChecked = false;
+  mobileDeviceChecked = false;
 };

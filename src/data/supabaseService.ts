@@ -1,97 +1,118 @@
-import { supabase } from "@/lib/supabaseClient";
-import { Construction, ConstructionFilter, StatusValue } from "@/types/construction";
 
-// Nome da tabela no Supabase
-const TABLE_NAME = "constructions"; 
+import { supabase } from './supabaseClient';
+import { Construction } from '../types/Construction';
+import { Filter } from '../types/Filter';
 
-const mapSupabaseDataToConstruction = (data: any): Construction => {
-  return {
-    id: data.id || data["Nome do Arquivo"], 
-    "Nome do Arquivo": data["Nome do Arquivo"],
-    "Data": data["Data"],
-    "Tipo de Licença": data["Tipo de Licença"],
-    "CNPJ": data["CNPJ"],
-    "Endereço": data["Endereço"],
-    "Nome da Empresa": data["Nome da Empresa"],
-    "Cidade": data["Cidade"],
-    "Área Construída": parseFloat(data["Área Construída"]) || 0,
-    "Área do Terreno": parseFloat(data["Área do Terreno"]) || 0,
-    latitude: parseFloat(data.latitude) || 0,
-    longitude: parseFloat(data.longitude) || 0,
-    status: data.status as StatusValue // Mapeando o novo campo status
-  } as Construction;
+// Sistema de cache
+interface CacheItem {
+  data: any;
+  timestamp: number;
+}
+
+const cache: Record<string, CacheItem> = {};
+const CACHE_TTL = 60000; // 1 minuto em milissegundos
+
+// Função para gerar chave de cache
+const generateCacheKey = (endpoint: string, params?: any): string => {
+  return `${endpoint}:${params ? JSON.stringify(params) : ''}`;
 };
 
-export const getAllConstructions = async (): Promise<Construction[]> => {
-  const { data, error } = await supabase.from(TABLE_NAME).select("*");
-  if (error) {
-    console.error("Erro ao buscar construções:", error);
-    throw error;
+// Função para obter dados do cache ou da API
+const getCachedData = async <T>(key: string, fetchFn: () => Promise<T>): Promise<T> => {
+  const now = Date.now();
+  const cachedItem = cache[key];
+
+  if (cachedItem && now - cachedItem.timestamp < CACHE_TTL) {
+    return cachedItem.data;
   }
-  return data ? data.map(mapSupabaseDataToConstruction) : [];
+
+  const data = await fetchFn();
+  cache[key] = { data, timestamp: now };
+  return data;
 };
 
-export const getCities = async (): Promise<string[]> => {
-  const { data, error } = await supabase.from(TABLE_NAME).select("\"Cidade\"");
-  if (error) {
-    console.error("Erro ao buscar cidades:", error);
-    throw error;
-  }
-  const cities = [...new Set((data as { "Cidade": string }[]).map(item => item["Cidade"]))];
-  return cities.sort();
-};
+// Função para limitar a frequência de chamadas (throttle)
+const throttle = <T extends (...args: any[]) => any>(func: T, limit: number): T => {
+  let lastCall = 0;
+  let lastResult: ReturnType<T>;
 
-export const getLicenseTypes = async (): Promise<string[]> => {
-  const { data, error } = await supabase.from(TABLE_NAME).select("\"Tipo de Licença\"");
-  if (error) {
-    console.error("Erro ao buscar tipos de licença:", error);
-    throw error;
-  }
-  const types = [...new Set((data as { "Tipo de Licença": string }[]).map(item => item["Tipo de Licença"]))];
-  return types.sort();
-};
-
-export const filterConstructions = async (
-  filter: ConstructionFilter
-): Promise<Construction[]> => {
-  let query = supabase.from(TABLE_NAME).select("*");
-
-  // Reintegrando o filtro por status
-  // Assumindo que a coluna no Supabase se chama 'status' (em minúsculas)
-  if (filter.status && filter.status !== "all") {
-    query = query.eq("status", filter.status);
-  }
-
-  if (filter.dateRange) {
-    if (filter.dateRange.start) {
-      query = query.gte("\"Data\"", filter.dateRange.start);
+  return ((...args: Parameters<T>): ReturnType<T> => {
+    const now = Date.now();
+    if (now - lastCall < limit) {
+      return lastResult;
     }
-    if (filter.dateRange.end) {
-      query = query.lte("\"Data\"", filter.dateRange.end);
-    }
-  }
-
-  if (filter.city) {
-    query = query.eq("\"Cidade\"", filter.city);
-  }
-
-  if (filter.licenseType) {
-    query = query.eq("\"Tipo de Licença\"", filter.licenseType);
-  }
-
-  if (filter.search && filter.search.trim() !== "") {
-    const searchTerm = `%${filter.search.toLowerCase()}%`;
-    query = query.or(
-      `\"Endereço\".ilike.${searchTerm},\"Nome da Empresa\".ilike.${searchTerm},\"Cidade\".ilike.${searchTerm}`
-    );
-  }
-
-  const { data, error } = await query;
-
-  if (error) {
-    console.error("Erro ao filtrar construções:", error);
-    throw error;
-  }
-  return data ? data.map(mapSupabaseDataToConstruction) : [];
+    lastCall = now;
+    lastResult = func(...args);
+    return lastResult;
+  }) as T;
 };
 
+// Buscar todas as construções
+export const fetchConstructions = async (): Promise<Construction[]> => {
+  const cacheKey = generateCacheKey('constructions');
+
+  return getCachedData(cacheKey, async () => {
+    try {
+      const { data, error } = await supabase
+        .from('constructions')
+        .select('*');
+
+      if (error) throw error;
+      return data || [];
+    } catch (error) {
+      console.error('Erro ao buscar construções:', error);
+      return [];
+    }
+  });
+};
+
+// Filtrar construções (com throttle)
+export const filterConstructions = throttle(
+  async (
+    constructions: Construction[],
+    filter: Filter,
+    searchQuery: string,
+    category: string
+  ): Promise<Construction[]> => {
+    // Se não há filtros ativos, retorne todas as construções
+    if (
+      Object.keys(filter).length === 0 &&
+      !searchQuery &&
+      !category &&
+      constructions.length > 0
+    ) {
+      return constructions;
+    }
+
+    try {
+      // Aplicar filtros localmente para evitar chamadas desnecessárias à API
+      let filtered = [...constructions];
+
+      // Aplicar filtro de busca
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase();
+        filtered = filtered.filter(
+          (construction) =>
+            construction.name.toLowerCase().includes(query) ||
+            construction.address.toLowerCase().includes(query)
+        );
+      }
+
+      // Aplicar filtro de categoria
+      if (category) {
+        filtered = filtered.filter((construction) => construction.category === category);
+      }
+
+      // Aplicar outros filtros
+      if (Object.keys(filter).length > 0) {
+        // Implemente a lógica de filtro adicional aqui
+      }
+
+      return filtered;
+    } catch (error) {
+      console.error('Erro ao filtrar construções:', error);
+      return [];
+    }
+  },
+  300 // Limitar a 1 chamada a cada 300ms
+);

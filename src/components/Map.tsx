@@ -1,67 +1,41 @@
 
-import React from 'react';
-import 'mapbox-gl/dist/mapbox-gl.css';
-import { Construction } from '@/types/construction';
-import { cn } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
-import MapFallbackView from '@/components/MapFallbackView';
-import { useMapbox } from '@/hooks/useMapbox';
-import { isMobileDevice } from '@/utils/webGLDetection';
+import React, { useMemo } from 'react';
+import useMapbox from '../hooks/useMapbox';
+import { Construction } from '../types/Construction';
+import { isMobileDevice } from '../utils/webGLDetection';
+
+const MapFallbackView = () => (
+  <div className="flex flex-col items-center justify-center h-64 bg-gray-100 rounded-lg p-4">
+    <p className="text-center mb-4">
+      O mapa não pode ser exibido. Seu dispositivo pode não suportar WebGL ou você está usando um dispositivo móvel.
+    </p>
+    <p className="text-center">
+      Por favor, tente acessar em um computador ou use a visualização em lista.
+    </p>
+  </div>
+);
 
 interface MapProps {
   constructions: Construction[];
-  onMarkerClick?: (construction: Construction) => void;
-  className?: string;
-  center?: [number, number];
-  zoom?: number;
 }
 
-const Map: React.FC<MapProps> = ({ 
-  constructions, 
-  onMarkerClick, 
-  className,
-  center = [-49.6401, -27.2423],
-  zoom = 9
-}) => {
-  const {
-    mapContainer,
-    mapboxSupported,
-    mapError,
-    mapLoaded
-  } = useMapbox({
-    constructions,
-    onMarkerClick,
-    center,
-    zoom
-  });
+const Map: React.FC<MapProps> = ({ constructions }) => {
+  // Memoize a verificação de dispositivo móvel
+  const isMobile = useMemo(() => isMobileDevice(), []);
+  
+  const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || '';
+  const { mapContainer, mapboxSupported, checkedSupport } = useMapbox(constructions, mapboxToken);
 
-  const isMobile = isMobileDevice();
-
-  // Console log para debugging
-  console.log('Map rendering status:', { mapboxSupported, mapError, isMobile });
+  // Renderização condicional otimizada
+  if (checkedSupport && !mapboxSupported) {
+    return <MapFallbackView />;
+  }
 
   return (
-    <div className={cn('relative w-full h-[500px] min-h-[500px] rounded-lg overflow-hidden', className)}>
-      {!mapboxSupported ? (
-        <MapFallbackView 
-          constructions={constructions} 
-          error={mapError} 
-          onMarkerClick={onMarkerClick} 
-        />
-      ) : null}
-      <div 
-        ref={mapContainer} 
-        className={`map-container h-[500px] ${!mapboxSupported ? 'hidden' : ''}`} 
-        style={{ minHeight: '500px' }}
-        data-is-mobile={isMobile ? "true" : "false"}
-      />
-      {mapError && mapboxSupported && (
-        <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-white px-4 py-2 rounded-full shadow-lg text-sm">
-          Erro no mapa. <Button variant="link" className="p-0 h-auto" onClick={() => window.location.reload()}>Recarregar</Button>
-        </div>
-      )}
+    <div className="h-[70vh] rounded-lg overflow-hidden">
+      <div ref={mapContainer} className="h-full w-full" />
     </div>
   );
 };
 
-export default Map;
+export default React.memo(Map);
