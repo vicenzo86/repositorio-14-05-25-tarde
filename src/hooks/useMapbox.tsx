@@ -100,7 +100,6 @@ export const useMapbox = ({
         renderAttempts,
       });
       if (checkedSupport && !mapboxSupported && !mapError) {
-        // If support check is done and mapbox is not supported, but no specific error is set yet
         setMapError("Mapbox não é suportado neste navegador ou dispositivo.")
       }
       return;
@@ -114,7 +113,7 @@ export const useMapbox = ({
     try {
       console.log("Initializing Mapbox with token:", mapboxToken);
       window.mapboxgl.accessToken = mapboxToken;
-      window.mapboxgl.workerCount = 0; // Keep workers disabled as per previous attempt
+      // window.mapboxgl.workerCount = 0; // REMOVED: This line was suspected of causing the 'send' error
 
       const mapStyle =
         renderAttempts > 0
@@ -127,7 +126,7 @@ export const useMapbox = ({
         center: center,
         zoom: zoom,
         attributionControl: true,
-        preserveDrawingBuffer: true, // May help with some rendering issues
+        preserveDrawingBuffer: true, 
         antialias: false,
         fadeDuration: 0,
         maxZoom: 19,
